@@ -19,17 +19,13 @@ enum slab_state {
     SLAB_PARTIAL,
 };
 
-struct obj {
-    struct obj *next_obj;
-};
-
-struct slab {
-    struct slab *next_slab;
+struct list {
+    struct list *next;
 };
 
 struct obj_cache {
-    struct slab *slabs;
-    struct obj *freelist;
+    struct list *slabs;
+    struct list *freelist;
     size_t object_size;
     unsigned int objects_per_slab;
     size_t slab_size;
@@ -53,31 +49,31 @@ static void *map_page(size_t size)
 static void obj_cache_init_freelist(struct obj_cache *cache, void *slab) 
 {
     int i;
-    struct obj *freelist = slab;
+    struct list *freelist = slab;
 
     for (i = 0; i < cache->objects_per_slab - 1; i++) {
-        freelist->next_obj = (struct obj *)((uintptr_t)freelist + 
+        freelist->next = (struct list *)((uintptr_t)freelist + 
                                             cache->object_size);
-        ASSERT_ALIGNMENT(cache->alignment, freelist->next_obj);
-        freelist = freelist->next_obj;
+        ASSERT_ALIGNMENT(cache->alignment, freelist->next);
+        freelist = freelist->next;
     }
     
-    freelist->next_obj = NULL;
-    cache->freelist = ((struct obj *)slab)->next_obj;
+    freelist->next = NULL;
+    cache->freelist = ((struct list *)slab)->next;
 }
 
 static void obj_cache_add_slab(struct obj_cache *cache, void *slab)
 {
     /* The slab meta-data is at the end of the slab memory */
-    struct slab *new_slab = (struct slab *)((uintptr_t)slab + cache->slab_size - 
-                                       sizeof(struct slab));
-    new_slab->next_slab = NULL;
+    struct list *new_slab = (struct list *)((uintptr_t)slab + cache->slab_size - 
+                                       sizeof(struct list));
+    new_slab->next = NULL;
     assert(!((uintptr_t)new_slab & (MALLOC_ALIGN - 1)));
 
     if (cache->slabs) {
-        struct slab *last_slab = cache->slabs;
-        while (last_slab->next_slab) {
-            last_slab = last_slab->next_slab;
+        struct list *last_slab = cache->slabs;
+        while (last_slab->next) {
+            last_slab = last_slab->next;
         }
 
     } else {
@@ -105,7 +101,7 @@ struct obj_cache *obj_cache_create(size_t size, size_t align,
     /* Don't set the aligment to anything less than the MALLOC alignment */
     ret->alignment = (align > MALLOC_ALIGN ? align : MALLOC_ALIGN);
     ret->object_size = size + (size % ret->alignment); 
-    ret->objects_per_slab = (ret->slab_size - sizeof(struct slab)) / 
+    ret->objects_per_slab = (ret->slab_size - sizeof(struct list)) / 
                            ret->object_size;
 
     printf("Objects per slab: %u\n", ret->objects_per_slab);
@@ -134,7 +130,7 @@ void *obj_cache_alloc(struct obj_cache * cache)
 
     if (cache->freelist) {
         ret = cache->freelist;
-        cache->freelist = cache->freelist->next_obj;
+        cache->freelist = cache->freelist->next;
     } else {
         printf("Adding a page!\n");
         ret = map_page(cache->slab_size); 
