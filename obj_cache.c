@@ -145,9 +145,20 @@ void *obj_cache_alloc(struct obj_cache * cache)
     return ret;
 } 
 
-struct obj_cache *obj_cache_free(struct obj_cache *cache)
+struct obj_cache *obj_cache_free(struct obj_cache *cache, void *obj)
 {
-    return NULL;
+    if (!cache) {
+      return;
+    }
+
+    if (cache->freelist) {
+        struct list *freelist = obj;
+        freelist->next = cache->freelist;
+        cache->freelist = freelist;
+    } else {
+        cache->freelist = obj;
+        cache->freelist->next = NULL;
+    }
 }
 
 void obj_cache_destroy(struct obj_cache *cache) 

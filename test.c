@@ -11,6 +11,7 @@ int main(void)
         *d = 1000.0;
         printf("%f\n", *d);
         printf("%p\n", d);
+        obj_cache_free(cache, d);
     }
 
     return 0;
