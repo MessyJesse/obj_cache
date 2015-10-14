@@ -57,6 +57,7 @@ inline static void *find_slab_head(size_t slab_alignment, void *obj)
 
 inline static struct slab_meta *find_slab_meta(void *slab, size_t slab_size)
 {
+    /* The slab meta-data is at the end of the slab memory */
     struct slab_meta *meta = (void *)((uintptr_t)slab + slab_size - 
                                       sizeof(struct slab_meta));
     ASSERT_ALIGNMENT(MALLOC_ALIGN, meta);
@@ -93,19 +94,30 @@ static void obj_cache_init_freelist(struct obj_cache *cache, void *slab)
     cache->freelist = ((struct list *)slab)->next;
 }
 
-static void obj_cache_add_slab(struct obj_cache *cache, void *slab)
+static void *obj_cache_add_slab(struct obj_cache *cache)
 {
-    /* The slab meta-data is at the end of the slab memory */
-    struct slab_meta *new_slab = find_slab_meta(slab, cache->slab_size);
-    new_slab->refcount = 0;
+    void *slab;  
+    struct slab_meta *meta;
 
-    if (cache->slabs) {
-        new_slab->next = cache->slabs;
-        cache->slabs = new_slab;
-    } else {
-        new_slab->next = NULL;
-        cache->slabs = new_slab;
+    slab = map_page(cache->slab_size); 
+
+    if (!slab) {
+        return NULL;
     }
+
+    meta = find_slab_meta(slab, cache->slab_size);
+
+    meta->refcount = 0;
+    if (cache->slabs) {
+        meta->next = cache->slabs;
+    } else {
+        meta->next = NULL;
+    }
+
+    cache->slabs = meta;
+    obj_cache_init_freelist(cache, slab);
+
+    return slab;
 }
 
 void obj_cache_reap_slab(struct obj_cache *cache, void *obj)
@@ -191,12 +203,7 @@ void *obj_cache_alloc(struct obj_cache * cache)
         ret = cache->freelist;
         cache->freelist = cache->freelist->next;
     } else {
-        ret = map_page(cache->slab_size); 
-
-        if (ret) {
-            obj_cache_add_slab(cache, ret);
-            obj_cache_init_freelist(cache, ret);
-        }
+        ret = obj_cache_add_slab(cache); 
     }
 
     ASSERT_ALIGNMENT(cache->alignment, ret);
