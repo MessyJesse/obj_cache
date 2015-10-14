@@ -13,7 +13,6 @@
         assert(!((uintptr_t)p & (MALLOC_ALIGN - 1))); \
     } while(0)
 
-
 enum slab_state {
     SLAB_EMPTY,
     SLAB_PARTIAL,
@@ -23,8 +22,13 @@ struct list {
     struct list *next;
 };
 
+struct slab_meta {
+    struct slab_meta *next;
+    unsigned int refcount;
+};
+
 struct obj_cache {
-    struct list *slabs;
+    struct slab_meta *slabs;
     struct list *freelist;
     size_t object_size;
     unsigned int objects_per_slab;
@@ -46,9 +50,38 @@ static void *map_page(size_t size)
     return ret;
 }
 
+inline static void *find_slab_head(size_t slab_alignment, void *obj)
+{
+    void *slab = (void *)((uintptr_t)obj & ~(slab_alignment - 1));
+    ASSERT_ALIGNMENT(slab_alignment, slab);
+    return slab;
+}
+
+inline static struct slab_meta *find_slab_meta(void *slab, size_t slab_size)
+{
+    struct slab_meta *meta = (void *)((uintptr_t)slab + slab_size - 
+                                      sizeof(struct slab_meta));
+    ASSERT_ALIGNMENT(MALLOC_ALIGN, meta);
+    return meta;
+}
+
+static int obj_cache_increment_slab_refcount(struct obj_cache *cache, void *obj)
+{
+    void *slab = find_slab_head(cache->slab_size, obj);
+    struct slab_meta *meta = find_slab_meta(slab, cache->slab_size);
+    return ++meta->refcount;
+}
+
+static int obj_cache_decrement_slab_refcount(struct obj_cache *cache, void *obj)
+{
+    void *slab = find_slab_head(cache->slab_size, obj);
+    struct slab_meta *meta = find_slab_meta(slab, cache->slab_size);
+    return --meta->refcount;
+}
+
 static void obj_cache_init_freelist(struct obj_cache *cache, void *slab) 
 {
-    int i;
+    unsigned int i;
     struct list *freelist = slab;
 
     for (i = 0; i < cache->objects_per_slab - 1; i++) {
@@ -65,18 +98,14 @@ static void obj_cache_init_freelist(struct obj_cache *cache, void *slab)
 static void obj_cache_add_slab(struct obj_cache *cache, void *slab)
 {
     /* The slab meta-data is at the end of the slab memory */
-    struct list *new_slab = (struct list *)((uintptr_t)slab + cache->slab_size - 
-                                       sizeof(struct list));
-    new_slab->next = NULL;
-    assert(!((uintptr_t)new_slab & (MALLOC_ALIGN - 1)));
+    struct slab_meta *new_slab = find_slab_meta(slab, cache->slab_size);
+    new_slab->refcount = 0;
 
     if (cache->slabs) {
-        struct list *last_slab = cache->slabs;
-        while (last_slab->next) {
-            last_slab = last_slab->next;
-        }
-
+        new_slab->next = cache->slabs;
+        cache->slabs = new_slab;
     } else {
+        new_slab->next = NULL;
         cache->slabs = new_slab;
     }
 }
@@ -132,7 +161,6 @@ void *obj_cache_alloc(struct obj_cache * cache)
         ret = cache->freelist;
         cache->freelist = cache->freelist->next;
     } else {
-        printf("Adding a page!\n");
         ret = map_page(cache->slab_size); 
 
         if (ret) {
@@ -140,12 +168,15 @@ void *obj_cache_alloc(struct obj_cache * cache)
             obj_cache_init_freelist(cache, ret);
         }
     }
-    
+
     ASSERT_ALIGNMENT(cache->alignment, ret);
+    
+    obj_cache_increment_slab_refcount(cache, ret);
+
     return ret;
 } 
 
-struct obj_cache *obj_cache_free(struct obj_cache *cache, void *obj)
+void obj_cache_free(struct obj_cache *cache, void *obj)
 {
     if (!cache) {
       return;
@@ -159,9 +190,14 @@ struct obj_cache *obj_cache_free(struct obj_cache *cache, void *obj)
         cache->freelist = obj;
         cache->freelist->next = NULL;
     }
+
+    obj_cache_decrement_slab_refcount(cache, obj);
 }
 
 void obj_cache_destroy(struct obj_cache *cache) 
 {
+    if (!cache) {
+        return;
+    }
 }
 
