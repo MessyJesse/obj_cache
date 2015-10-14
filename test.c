@@ -3,15 +3,16 @@
 
 int main(void)
 {
-    struct obj_cache *cache = obj_cache_create(sizeof(double), 0, NULL, NULL);
-    
-    int i = 0;
-    for (; i < 10000; i++) {
-        double *d = obj_cache_alloc(cache);
-        *d = 1000.0;
-        printf("%f\n", *d);
-        printf("%p\n", d);
-        obj_cache_free(cache, d);
+    double *store[1000];
+    int i;
+    struct obj_cache *cache = obj_cache_create(sizeof(double), 0);
+
+    for (i = 0; i < 1000; i++) {
+        store[i] = obj_cache_alloc(cache);
+    }
+
+    for (i = 0; i < 1000; i++) {
+        obj_cache_free(cache, store[i]);
     }
 
     return 0;

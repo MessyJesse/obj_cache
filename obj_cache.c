@@ -35,8 +35,6 @@ struct obj_cache {
     size_t slab_size;
     size_t alignment;
     int refcount;
-    void (*ctor)(void *);
-    void (*dtor)(void *);
 };
 
 static void *map_page(size_t size) 
@@ -110,9 +108,44 @@ static void obj_cache_add_slab(struct obj_cache *cache, void *slab)
     }
 }
 
-struct obj_cache *obj_cache_create(size_t size, size_t align, 
-                                   void (*ctor)(void *), 
-                                   void (*dtor)(void *))
+void obj_cache_reap_slab(struct obj_cache *cache, void *obj)
+{
+    int stat;
+    void *slab = find_slab_head(cache->slab_size, obj);
+    struct slab_meta *meta = find_slab_meta(obj, cache->slab_size);
+    struct slab_meta *prev_meta = cache->slabs;
+    
+    /* search for the slab prev to the slab we are trying to free */
+    while (prev_meta->next != meta && prev_meta->next) {
+        prev_meta = prev_meta->next;
+    }
+
+    if (prev_meta->next) {
+        prev_meta->next = meta->next;
+    }
+
+    struct list *free_elem = cache->freelist;
+    struct list *prev_elem = NULL;
+    while (free_elem) {
+        if ((uintptr_t)free_elem >= (uintptr_t)slab && 
+            (uintptr_t)free_elem < (uintptr_t)meta) {
+            if (prev_elem) {
+               prev_elem->next = free_elem->next; 
+            } else {
+                cache->freelist = NULL;
+            }
+        }
+
+        free_elem = free_elem->next;
+        prev_elem = free_elem;
+    }
+
+    stat = munmap(slab, cache->slab_size);
+
+    assert(stat == 0);
+}
+
+struct obj_cache *obj_cache_create(size_t size, size_t align)
 {
     if ((align & 0x1) || (align % MALLOC_ALIGN)) {
         return NULL;
@@ -133,9 +166,6 @@ struct obj_cache *obj_cache_create(size_t size, size_t align,
     ret->objects_per_slab = (ret->slab_size - sizeof(struct list)) / 
                            ret->object_size;
 
-    printf("Objects per slab: %u\n", ret->objects_per_slab);
-    ret->ctor = ctor;
-    ret->dtor = dtor;
     ret->freelist = NULL;
     ret->slabs = NULL;
 
@@ -178,6 +208,8 @@ void *obj_cache_alloc(struct obj_cache * cache)
 
 void obj_cache_free(struct obj_cache *cache, void *obj)
 {
+    int refcount;
+
     if (!cache) {
       return;
     }
@@ -191,7 +223,11 @@ void obj_cache_free(struct obj_cache *cache, void *obj)
         cache->freelist->next = NULL;
     }
 
-    obj_cache_decrement_slab_refcount(cache, obj);
+    refcount = obj_cache_decrement_slab_refcount(cache, obj);
+    
+    if (!refcount) {
+        obj_cache_reap_slab(cache, obj);
+    }
 }
 
 void obj_cache_destroy(struct obj_cache *cache) 
