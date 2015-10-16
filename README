@@ -1,1 +1,18 @@
 Basic slab allocator
+
+TODO:
+    - Move freelist linkage to the end of free buffers
+    - Add constructor and destructor, this requires an extra word in the obj
+      buffer
+    - Look into huge pages and how they might work for larger objects, i.e. if
+      anyting less than 1/8 of a page is small, then the object classification
+      is based on the page size
+    - Should I use posix_memalign rather than manual alignment and mmap?
+    - Do I want to try cache coloring?
+    - How does a per-slab free list effect allocation/free time. How does it
+      effect reap time
+    - Should I validate pointers that are passed to obj_cache_free as part of
+      slabs that I've allocated? How does this effect performance
+    
+
+    
