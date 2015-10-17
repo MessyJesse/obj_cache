@@ -25,25 +25,39 @@ int test_alignment(size_t align, void *p)
 
 static char *test_object_create_destroy()
 {
-    /**
-     * TODO:
-     *  - Refactor
-     *  - Swizzle
-     */
-    int i;
-    int *objects[10000];
-    struct obj_cache *cache = obj_cache_create(2000, 0);
+    {
+        int i;
+        int *objects[10000];
+        struct obj_cache *cache = obj_cache_create(145, 0);
     
-    for (i = 0; i < 10000; i++) {
-        objects[i] = obj_cache_alloc(cache);
-        *objects[i] = i * 2;
-    }
+        for (i = 0; i < 10000; i++) {
+            objects[i] = obj_cache_alloc(cache);
+            *objects[i] = i * 2;
+        }
 
-    for (i = 0; i < 10000; i++) {
-        obj_cache_free(cache, objects[9999 - i]);
-    }
+        for (i = 0; i < 10000; i++) {
+            obj_cache_free(cache, objects[9999 - i]);
+        }
 
-    obj_cache_destroy(cache);
+        obj_cache_destroy(cache);
+    }
+    
+    {
+        int i;
+        int *objects[10000];
+        struct obj_cache *cache = obj_cache_create(55, 0);
+    
+        for (i = 0; i < 10000; i++) {
+            objects[i] = obj_cache_alloc(cache);
+            *objects[i] = i * 2;
+        }
+
+        for (i = 0; i < 10000; i++) {
+            obj_cache_free(cache, objects[i]);
+        }
+
+        obj_cache_destroy(cache);
+    }
 
     return NULL;
 }
@@ -54,6 +68,8 @@ static char *test_user_alignment()
      * TODO: 
      *  - Negative alignments
      *  - Huge alignments
+     *  - alignment > size
+     *  - size > alignment
      */
     {
         struct obj_cache *cache = (struct obj_cache *)0xDEADBEEF;
@@ -153,12 +169,14 @@ static char *test_obj_cache_create()
         struct obj_cache *cache = (struct obj_cache*)0xDEADBEEF;
         cache = obj_cache_create(0, 0);
         mu_assert("cache is non-NULL on 0 size\n", cache == NULL);
+        obj_cache_destroy(cache);
     }
 
     {
         struct obj_cache *cache = NULL;
         cache = obj_cache_create(4, 0);
         mu_assert("cache is NULL on valid input\n", cache != NULL);
+        obj_cache_destroy(cache);
     }
 
     return NULL;
