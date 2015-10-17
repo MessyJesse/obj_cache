@@ -111,7 +111,6 @@ static void *obj_cache_add_slab(struct obj_cache *cache)
     }
 
     cache->slabs = meta;
-    printf("Adding slab: %p\n", meta);
 
     obj_cache_init_freelist(cache, slab);
 
@@ -125,24 +124,28 @@ void obj_cache_reap_slab(struct obj_cache *cache, void *obj)
     int stat;
     struct list *curr_obj;
     struct list *prev_obj;
-    struct slab_meta *prev_meta;
     void *slab_to_free = find_slab_head(cache->slab_size, obj);
-    struct slab_meta *meta_to_free = find_slab_meta(obj, cache->slab_size);
-
-    printf("reaping: %p\n", slab_to_free); 
+    struct slab_meta *meta_to_free = find_slab_meta(slab_to_free, cache->slab_size);
 
     if (meta_to_free == cache->slabs) {
         /* We are trying to free the first slab in the slab list */
         cache->slabs = meta_to_free->next;
     } else {
-        prev_meta = cache->slabs;
+        struct slab_meta *prev_slab = cache->slabs;
+        struct slab_meta *curr_slab = cache->slabs->next;
+
         /* Search for the slab prev to the slab we are trying to free */
-        while (prev_meta->next != meta_to_free) {
-            prev_meta = prev_meta->next;
-            assert(prev_meta->next);
+        while (curr_slab) {
+            if (curr_slab == meta_to_free) {
+                prev_slab->next = curr_slab->next;
+                break;
+            }
+
+            prev_slab = curr_slab;
+            curr_slab = curr_slab->next;
         }
 
-        prev_meta->next = meta_to_free->next;
+        assert(curr_slab == meta_to_free);
     }
 
     /* Search through evey element in the freelist and remove any object that is
@@ -156,12 +159,12 @@ void obj_cache_reap_slab(struct obj_cache *cache, void *obj)
         if ((uintptr_t)curr_obj >= (uintptr_t)slab_to_free && 
             (uintptr_t)curr_obj < (uintptr_t)meta_to_free) {
             prev_obj->next = curr_obj->next; 
+            curr_obj = curr_obj->next;
+        } else {
+            prev_obj = curr_obj;
+            curr_obj = curr_obj->next;
         }
-
-        prev_obj = curr_obj;
-        curr_obj = curr_obj->next;
     }
-
 
     /* The loop above does not check the first element in the freelist check it
      * here */
@@ -202,7 +205,7 @@ struct obj_cache *obj_cache_create(size_t size, size_t align)
     if (ret->alignment > size) {
         ret->object_size = ret->alignment;
     } else {
-        ret->object_size = size + (size - ret->alignment);
+        ret->object_size = (size + ret->alignment - 1) & ~(ret->alignment -1);
     }
 
     ret->objects_per_slab = (ret->slab_size - sizeof(struct list)) / 
@@ -217,6 +220,7 @@ struct obj_cache *obj_cache_create(size_t size, size_t align)
      */
     assert(size < (ret->slab_size / 2));
     assert(align < ret->slab_size);
+    assert(!(ret->object_size % ret->alignment));
 
     return ret;
 }
