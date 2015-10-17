@@ -179,6 +179,11 @@ void obj_cache_reap_slab(struct obj_cache *cache, void *obj)
 
 struct obj_cache *obj_cache_create(size_t size, size_t align)
 {
+
+    if (!size) {
+        return NULL;
+    }
+
     if ((align & 0x1) || (align % MALLOC_ALIGN)) {
         return NULL;
     }
