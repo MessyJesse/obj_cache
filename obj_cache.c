@@ -13,11 +13,6 @@
         assert(!((uintptr_t)p & (MALLOC_ALIGN - 1))); \
     } while(0)
 
-enum slab_state {
-    SLAB_EMPTY,
-    SLAB_PARTIAL,
-};
-
 struct list {
     struct list *next;
 };
@@ -28,8 +23,9 @@ struct slab_meta {
 };
 
 struct obj_cache {
-    struct slab_meta *slabs;
     struct list *freelist;
+    struct slab_meta *slabs;
+    unsigned int slab_count;
     size_t object_size;
     unsigned int objects_per_slab;
     size_t slab_size;
@@ -84,7 +80,7 @@ static void obj_cache_init_freelist(struct obj_cache *cache, void *slab)
     struct list *freelist = slab;
 
     for (i = 0; i < cache->objects_per_slab - 1; i++) {
-        freelist->next = (struct list *)((uintptr_t)freelist + 
+        freelist->next = (void *)((uintptr_t)freelist + 
                                             cache->object_size);
         ASSERT_ALIGNMENT(cache->alignment, freelist->next);
         freelist = freelist->next;
@@ -106,8 +102,8 @@ static void *obj_cache_add_slab(struct obj_cache *cache)
     }
 
     meta = find_slab_meta(slab, cache->slab_size);
-
     meta->refcount = 0;
+
     if (cache->slabs) {
         meta->next = cache->slabs;
     } else {
@@ -115,7 +111,11 @@ static void *obj_cache_add_slab(struct obj_cache *cache)
     }
 
     cache->slabs = meta;
+    printf("Adding slab: %p\n", meta);
+
     obj_cache_init_freelist(cache, slab);
+
+    cache->slab_count++;
 
     return slab;
 }
@@ -123,38 +123,58 @@ static void *obj_cache_add_slab(struct obj_cache *cache)
 void obj_cache_reap_slab(struct obj_cache *cache, void *obj)
 {
     int stat;
-    void *slab = find_slab_head(cache->slab_size, obj);
-    struct slab_meta *meta = find_slab_meta(obj, cache->slab_size);
-    struct slab_meta *prev_meta = cache->slabs;
-    
-    /* search for the slab prev to the slab we are trying to free */
-    while (prev_meta->next != meta && prev_meta->next) {
-        prev_meta = prev_meta->next;
-    }
+    struct list *curr_obj;
+    struct list *prev_obj;
+    struct slab_meta *prev_meta;
+    void *slab_to_free = find_slab_head(cache->slab_size, obj);
+    struct slab_meta *meta_to_free = find_slab_meta(obj, cache->slab_size);
 
-    if (prev_meta->next) {
-        prev_meta->next = meta->next;
-    }
+    printf("reaping: %p\n", slab_to_free); 
 
-    struct list *free_elem = cache->freelist;
-    struct list *prev_elem = NULL;
-    while (free_elem) {
-        if ((uintptr_t)free_elem >= (uintptr_t)slab && 
-            (uintptr_t)free_elem < (uintptr_t)meta) {
-            if (prev_elem) {
-               prev_elem->next = free_elem->next; 
-            } else {
-                cache->freelist = NULL;
-            }
+    if (meta_to_free == cache->slabs) {
+        /* We are trying to free the first slab in the slab list */
+        cache->slabs = meta_to_free->next;
+    } else {
+        prev_meta = cache->slabs;
+        /* Search for the slab prev to the slab we are trying to free */
+        while (prev_meta->next != meta_to_free) {
+            prev_meta = prev_meta->next;
+            assert(prev_meta->next);
         }
 
-        free_elem = free_elem->next;
-        prev_elem = free_elem;
+        prev_meta->next = meta_to_free->next;
     }
 
-    stat = munmap(slab, cache->slab_size);
+    /* Search through evey element in the freelist and remove any object that is
+     * in the slab we are reaping */
+    prev_obj = cache->freelist;
+    curr_obj = cache->freelist->next;
+
+    assert(prev_obj);
+
+    while (curr_obj) {
+        if ((uintptr_t)curr_obj >= (uintptr_t)slab_to_free && 
+            (uintptr_t)curr_obj < (uintptr_t)meta_to_free) {
+            prev_obj->next = curr_obj->next; 
+        }
+
+        prev_obj = curr_obj;
+        curr_obj = curr_obj->next;
+    }
+
+
+    /* The loop above does not check the first element in the freelist check it
+     * here */
+    if ((uintptr_t)cache->freelist >= (uintptr_t)slab_to_free && 
+        (uintptr_t)cache->freelist < (uintptr_t)meta_to_free) {
+        cache->freelist = cache->freelist->next;
+    }
+
+    stat = munmap(slab_to_free, cache->slab_size);
 
     assert(stat == 0);
+
+    cache->slab_count--;
 }
 
 struct obj_cache *obj_cache_create(size_t size, size_t align)
@@ -174,9 +194,14 @@ struct obj_cache *obj_cache_create(size_t size, size_t align)
     ret->slab_size = getpagesize();
     /* Don't set the aligment to anything less than the MALLOC alignment */
     ret->alignment = (align > MALLOC_ALIGN ? align : MALLOC_ALIGN);
-    ret->object_size = size + (size % ret->alignment); 
+    if (ret->alignment > size) {
+        ret->object_size = ret->alignment;
+    } else {
+        ret->object_size = size + (size - ret->alignment);
+    }
+
     ret->objects_per_slab = (ret->slab_size - sizeof(struct list)) / 
-                           ret->object_size;
+                            ret->object_size;
 
     ret->freelist = NULL;
     ret->slabs = NULL;
@@ -208,7 +233,9 @@ void *obj_cache_alloc(struct obj_cache * cache)
 
     ASSERT_ALIGNMENT(cache->alignment, ret);
     
-    obj_cache_increment_slab_refcount(cache, ret);
+    if (ret) {
+        obj_cache_increment_slab_refcount(cache, ret);
+    }
 
     return ret;
 } 
@@ -239,8 +266,33 @@ void obj_cache_free(struct obj_cache *cache, void *obj)
 
 void obj_cache_destroy(struct obj_cache *cache) 
 {
+    struct slab_meta *slab_to_free;
+    int stat;
+    void *data;
+
     if (!cache) {
         return;
     }
+
+    if (cache->slabs) {
+        slab_to_free = cache->slabs->next;
+
+        while (slab_to_free) {
+            data = (void *)((uintptr_t)slab_to_free - (cache->slab_size - sizeof(struct slab_meta)));
+            ASSERT_ALIGNMENT(cache->slab_size, data);
+            slab_to_free = slab_to_free->next;
+            stat = munmap(data, cache->slab_size);
+            assert(stat == 0);
+        }
+
+        data = (void *)((uintptr_t)cache->slabs - (cache->slab_size - sizeof(struct slab_meta)));
+        ASSERT_ALIGNMENT(cache->slab_size, data);
+
+        stat = munmap(data, cache->slab_size);
+        assert(stat == 0);
+    }
+
+    stat = munmap(cache, sizeof(struct obj_cache));
+    assert(stat == 0);
 }
 
