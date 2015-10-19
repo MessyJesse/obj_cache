@@ -78,6 +78,13 @@ static char *test_user_alignment()
 
     {
         struct obj_cache *cache = (struct obj_cache *)0xDEADBEEF;
+        cache = obj_cache_create(sizeof(struct test_struct), 40);
+        mu_assert("obj_cache_create did not return NULL for invalid user alignment\n", 
+                  cache == NULL);
+    }
+
+    {
+        struct obj_cache *cache = (struct obj_cache *)0xDEADBEEF;
         cache = obj_cache_create(sizeof(struct test_struct), sizeof(void *));
         mu_assert("obj_cache_create failed on valid user alignment\n", cache);
     }
@@ -85,9 +92,8 @@ static char *test_user_alignment()
     {
         struct test_struct *p_s;
         int i;
-        static const int user_alignment = sizeof(struct test_struct);
-        struct obj_cache *cache = obj_cache_create(2 * 
-                                                   sizeof(struct test_struct), 
+        static const int user_alignment = 8;
+        struct obj_cache *cache = obj_cache_create(2 * user_alignment, 
                                                    user_alignment);
         
         for (i = 0; i < 10; i++) { 
