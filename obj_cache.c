@@ -33,6 +33,15 @@ struct obj_cache {
     int refcount;
 };
 
+static int check_power_of_two(size_t x)
+{
+    if (x == 0) {
+        return 0;
+    }
+    
+    return !(x & (x - 1)) ? 1 : -1;
+}
+
 static void *map_page(size_t size) 
 {
     void *ret = mmap(NULL, size, PROT_READ | PROT_WRITE, 
@@ -187,7 +196,7 @@ struct obj_cache *obj_cache_create(size_t size, size_t align)
         return NULL;
     }
 
-    if ((align & 0x1) || (align % MALLOC_ALIGN)) {
+    if (check_power_of_two(align) == -1 || (align % MALLOC_ALIGN)) {
         return NULL;
     }
 
@@ -205,7 +214,7 @@ struct obj_cache *obj_cache_create(size_t size, size_t align)
     if (ret->alignment > size) {
         ret->object_size = ret->alignment;
     } else {
-        ret->object_size = (size + ret->alignment - 1) & ~(ret->alignment -1);
+        ret->object_size = (size + ret->alignment - 1) & ~(ret->alignment - 1);
     }
 
     ret->objects_per_slab = (ret->slab_size - sizeof(struct list)) / 
