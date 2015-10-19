@@ -68,8 +68,6 @@ static char *test_user_alignment()
      * TODO: 
      *  - Negative alignments
      *  - Huge alignments
-     *  - alignment > size
-     *  - size > alignment
      */
     {
         struct obj_cache *cache = (struct obj_cache *)0xDEADBEEF;
@@ -85,30 +83,38 @@ static char *test_user_alignment()
     }
 
     {
-        static const int user_alignment = 128;
-        struct obj_cache *cache = obj_cache_create(sizeof(struct test_struct), 
-                                                   user_alignment);
         struct test_struct *p_s;
         int i;
+        static const int user_alignment = sizeof(struct test_struct);
+        struct obj_cache *cache = obj_cache_create(2 * 
+                                                   sizeof(struct test_struct), 
+                                                   user_alignment);
         
         for (i = 0; i < 10; i++) { 
             p_s = obj_cache_alloc(cache);
             mu_assert("obj_cache_alloc object is not aligned to void * for \
                        valid user alignment\n", 
                       test_alignment(sizeof(void *), p_s)); 
+            mu_assert("obj_cache_alloc object is not aligned to valid user \
+                       alignment\n", 
+                      test_alignment(user_alignment, p_s)); 
         }
 
         obj_cache_destroy(cache);
     }
 
     {
-        int i;
         struct test_struct *p_s;
+        int i;
         static const int user_alignment = 128;
         struct obj_cache *cache = obj_cache_create(sizeof(struct test_struct), 
                                                    user_alignment);
-        for (i = 0; i < 10; i++) {
+        
+        for (i = 0; i < 10; i++) { 
             p_s = obj_cache_alloc(cache);
+            mu_assert("obj_cache_alloc object is not aligned to void * for \
+                       valid user alignment\n", 
+                      test_alignment(sizeof(void *), p_s)); 
             mu_assert("obj_cache_alloc object is not aligned to valid user \
                        alignment\n", 
                       test_alignment(user_alignment, p_s)); 
