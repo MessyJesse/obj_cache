@@ -1,4 +1,5 @@
-# obj_cache: A Slab Allocator
+obj_cache: A Slab Allocator
+===========================
 
 This is a object cache based on the ideas presented in 
 [Jon Bonwick's paper](http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.29.4759). 
@@ -8,7 +9,8 @@ implementation is pretty naive, but I'd like to see how the optimizations
 presented in Bonwick's paper chance the performance of obj_cache under various 
 loads.
 
-**TODO:**
+TODO:
+____
 
 -   Benchmark against glib's gslice
 
@@ -37,8 +39,7 @@ loads.
     buffer
 
 -   Look into huge pages and how they might work for larger objects, i.e. if
-    anything less than 1/8 of a page is small, then the object classification
-    is based on the page size
+    anything less than 1/8 of a page is small, then the object classification is based on the page size
 
 -   Should I use posix_memalign rather than manual alignment and mmap?
 
