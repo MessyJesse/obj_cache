@@ -5,7 +5,7 @@ This is a object cache based on the ideas presented in
 [Jon Bonwick's paper](http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.29.4759). 
 This project will be mostly an exercise in profiling and benchmarking. The 
 current implementation is pretty naive, but I'd like to see how the 
-optimizations presented in Bonwick's paper chance the performance of obj_cache
+optimizations presented in Bonwick's paper channge the performance of obj_cache
 under various loads.
 
 TODO:
