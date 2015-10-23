@@ -33,7 +33,7 @@ struct obj_cache {
     int refcount;
 };
 
-static int check_power_of_two(size_t x)
+inline static int check_power_of_two(size_t x)
 {
     if (x == 0) {
         return 0;
@@ -101,10 +101,8 @@ static void obj_cache_init_freelist(struct obj_cache *cache, void *slab)
 
 static void *obj_cache_add_slab(struct obj_cache *cache)
 {
-    void *slab;  
     struct slab_meta *meta;
-
-    slab = map_page(cache->slab_size); 
+    void *slab = map_page(cache->slab_size); 
 
     if (!slab) {
         return NULL;
@@ -134,7 +132,8 @@ void obj_cache_reap_slab(struct obj_cache *cache, void *obj)
     struct list *curr_obj;
     struct list *prev_obj;
     void *slab_to_free = find_slab_head(cache->slab_size, obj);
-    struct slab_meta *meta_to_free = find_slab_meta(slab_to_free, cache->slab_size);
+    struct slab_meta *meta_to_free = 
+                      find_slab_meta(slab_to_free, cache->slab_size);
 
     if (meta_to_free == cache->slabs) {
         /* We are trying to free the first slab in the slab list */
@@ -284,9 +283,9 @@ void obj_cache_free(struct obj_cache *cache, void *obj)
 
 void obj_cache_destroy(struct obj_cache *cache) 
 {
-    struct slab_meta *slab_to_free;
     int stat;
     void *data;
+    struct slab_meta *slab_to_free;
 
     if (!cache) {
         return;
@@ -296,14 +295,17 @@ void obj_cache_destroy(struct obj_cache *cache)
         slab_to_free = cache->slabs->next;
 
         while (slab_to_free) {
-            data = (void *)((uintptr_t)slab_to_free - (cache->slab_size - sizeof(struct slab_meta)));
+            data = (void *)((uintptr_t)slab_to_free - 
+                                       (cache->slab_size - 
+                                        sizeof(struct slab_meta)));
             ASSERT_ALIGNMENT(cache->slab_size, data);
             slab_to_free = slab_to_free->next;
             stat = munmap(data, cache->slab_size);
             assert(stat == 0);
         }
 
-        data = (void *)((uintptr_t)cache->slabs - (cache->slab_size - sizeof(struct slab_meta)));
+        data = (void *)((uintptr_t)cache->slabs - (cache->slab_size - 
+                                                   sizeof(struct slab_meta)));
         ASSERT_ALIGNMENT(cache->slab_size, data);
 
         stat = munmap(data, cache->slab_size);
