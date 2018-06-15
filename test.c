@@ -28,7 +28,7 @@ static char *test_object_create_destroy()
     {
         int i;
         int *objects[10000];
-        struct obj_cache *cache = obj_cache_create(145, 0);
+        struct obj_cache *cache = obj_cache_create(4, 0);
     
         for (i = 0; i < 10000; i++) {
             objects[i] = obj_cache_alloc(cache);
@@ -36,6 +36,7 @@ static char *test_object_create_destroy()
         }
 
         for (i = 0; i < 10000; i++) {
+            mu_assert("data was corrupted\n", *objects[9999-i] == (9999-i) * 2);
             obj_cache_free(cache, objects[9999 - i]);
         }
 
@@ -53,6 +54,7 @@ static char *test_object_create_destroy()
         }
 
         for (i = 0; i < 10000; i++) {
+            mu_assert("data was corrupted\n", *objects[i] == i * 2);
             obj_cache_free(cache, objects[i]);
         }
 

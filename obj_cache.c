@@ -216,7 +216,7 @@ struct obj_cache *obj_cache_create(size_t size, size_t align)
         ret->object_size = (size + ret->alignment - 1) & ~(ret->alignment - 1);
     }
 
-    ret->objects_per_slab = (ret->slab_size - sizeof(struct list)) / 
+    ret->objects_per_slab = (ret->slab_size - sizeof(struct slab_meta)) /
                             ret->object_size;
 
     ret->freelist = NULL;
